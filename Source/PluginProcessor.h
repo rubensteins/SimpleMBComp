@@ -10,6 +10,19 @@
 
 #include <JuceHeader.h>
 
+struct ChainSettings
+{
+    float peakFreq = 0.0f;
+    float peakGainDb = 0.0f;
+    float peakQuality = 1.0f;
+    float lowCutFreq = 0.0f;
+    float highCutFreq = 0.0f;
+    int lowCutSlope = 0;
+    int highCutSlope = 0;
+};
+
+ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& apvts);
+
 //==============================================================================
 /**
 */
@@ -54,10 +67,8 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     // this is a function that returns all paramters
-    static juce::AudioProcessorValueTreeState::ParameterLayout
-                createParamLayout();
-    
-    juce::AudioProcessorValueTreeState apvts {*this, nullptr, "Parameters", createParamLayout() };
+    static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    juce::AudioProcessorValueTreeState apvts {*this, nullptr, "Parameters", createParameterLayout()};
     
 private:
     
@@ -68,6 +79,12 @@ private:
     using MonoChain = juce::dsp::ProcessorChain<CutFilter, Filter, CutFilter>;
     MonoChain leftChain, rightChain;
     
+    enum ChainPosition
+    {
+        LowPass,
+        Peak,
+        HighPass
+    };
     
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SimpleMBCompAudioProcessor)
