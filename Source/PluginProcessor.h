@@ -53,6 +53,12 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    // this is a function that returns all paramters
+    static juce::AudioProcessorValueTreeState::ParameterLayout
+                createParamLayout();
+    
+    juce::AudioProcessorValueTreeState apvts {*this, nullptr, "Parameters", createParamLayout() };
+    
 private:
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SimpleMBCompAudioProcessor)
