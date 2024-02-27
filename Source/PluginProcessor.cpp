@@ -9,8 +9,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-
-
 //==============================================================================
 SimpleMBCompAudioProcessor::SimpleMBCompAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -92,6 +90,20 @@ void SimpleMBCompAudioProcessor::changeProgramName (int index, const juce::Strin
 {
 }
 
+void SimpleMBCompAudioProcessor::updatePeakfilter(ChainSettings chainSettings)
+{
+    auto peakCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
+                        getSampleRate(),
+                        chainSettings.peakFreq,
+                        chainSettings.peakQuality,
+                        juce::Decibels::decibelsToGain(chainSettings.peakGainDb));
+    
+    *leftChain.get<ChainPosition::Peak>().coefficients = *peakCoefs;
+    *rightChain.get<ChainPosition::Peak>().coefficients = *peakCoefs;
+}
+
+
+
 //==============================================================================
 void SimpleMBCompAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
@@ -108,63 +120,17 @@ void SimpleMBCompAudioProcessor::prepareToPlay (double sampleRate, int samplesPe
     
     ChainSettings chainSettings = getChainSettings(apvts);
     
-    auto peakCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
-                        sampleRate,
-                        chainSettings.peakFreq,
-                        chainSettings.peakQuality,
-                        juce::Decibels::decibelsToGain(chainSettings.peakGainDb));
+    updatePeakfilter(chainSettings);
     
-    *leftChain.get<ChainPosition::Peak>().coefficients = *peakCoefs;
-    *rightChain.get<ChainPosition::Peak>().coefficients = *peakCoefs;
-
-    auto cutCoefs =
+    const auto& cutCoefs =
         juce::dsp::FilterDesign<float>::designIIRLowpassHighOrderButterworthMethod(chainSettings.lowCutFreq,
-                                                                               sampleRate,
+                                                                               getSampleRate(),
                                                                                2 * (chainSettings.lowCutSlope + 1));
     auto& leftLowCut = leftChain.get<ChainPosition::LowPass>();
     auto& rightLowCut = rightChain.get<ChainPosition::LowPass>();
     
-    leftLowCut.setBypassed<0>(true);
-    leftLowCut.setBypassed<1>(true);
-    leftLowCut.setBypassed<2>(true);
-    leftLowCut.setBypassed<3>(true);
-    rightLowCut.setBypassed<0>(true);
-    rightLowCut.setBypassed<1>(true);
-    rightLowCut.setBypassed<2>(true);
-    rightLowCut.setBypassed<3>(true);
-
-    switch(chainSettings.lowCutSlope)
-    {
-        case Slope_48:
-        {
-            leftLowCut.get<3>().coefficients = *cutCoefs[3];
-            leftLowCut.setBypassed<3>(false);
-            rightLowCut.get<3>().coefficients = *cutCoefs[3];
-            rightLowCut.setBypassed<3>(false);
-        }
-        case Slope_36:
-        {
-            leftLowCut.get<2>().coefficients = *cutCoefs[2];
-            leftLowCut.setBypassed<2>(false);
-            rightLowCut.get<2>().coefficients = *cutCoefs[2];
-            rightLowCut.setBypassed<2>(false);
-        }
-        case Slope_24:
-        {
-            leftLowCut.get<1>().coefficients = *cutCoefs[1];
-            leftLowCut.setBypassed<1>(false);
-            rightLowCut.get<1>().coefficients = *cutCoefs[1];
-            rightLowCut.setBypassed<1>(false);
-        }
-        case Slope_12:
-        {
-            leftLowCut.get<0>().coefficients = *cutCoefs[0];
-            leftLowCut.setBypassed<0>(false);
-            rightLowCut.get<0>().coefficients = *cutCoefs[0];
-            rightLowCut.setBypassed<0>(false);
-            break;
-        }
-    }
+    SimpleMBCompAudioProcessor::updateLowCutFilter(leftLowCut, cutCoefs, chainSettings.lowCutSlope);
+    SimpleMBCompAudioProcessor::updateLowCutFilter(rightLowCut, cutCoefs, chainSettings.lowCutSlope);
 }
 
 void SimpleMBCompAudioProcessor::releaseResources()
@@ -218,16 +184,19 @@ void SimpleMBCompAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     
     ChainSettings chainSettings = getChainSettings(apvts);
     
-    auto peakCoefs = juce::dsp::IIR::Coefficients<float>::makePeakFilter(
-                        getSampleRate(),
-                        chainSettings.peakFreq,
-                        chainSettings.peakQuality,
-                        juce::Decibels::decibelsToGain(chainSettings.peakGainDb));
+    updatePeakfilter(chainSettings);
+    const auto& cutCoefs =
+        juce::dsp::FilterDesign<float>::designIIRLowpassHighOrderButterworthMethod(chainSettings.lowCutFreq,
+                                                                               getSampleRate(),
+                                                                               2 * (chainSettings.lowCutSlope + 1));
+    auto& leftLowCut = leftChain.get<ChainPosition::LowPass>();
+    auto& rightLowCut = rightChain.get<ChainPosition::LowPass>();
     
-    *leftChain.get<ChainPosition::Peak>().coefficients = *peakCoefs;
-    *rightChain.get<ChainPosition::Peak>().coefficients = *peakCoefs;
+    SimpleMBCompAudioProcessor::updateLowCutFilter(leftLowCut, cutCoefs, chainSettings.lowCutSlope);
+    SimpleMBCompAudioProcessor::updateLowCutFilter(rightLowCut, cutCoefs, chainSettings.lowCutSlope);
     
     juce::dsp::AudioBlock<float> block(buffer);
+    
     auto leftBlock = block.getSingleChannelBlock(0);
     auto rightBlock = block.getSingleChannelBlock(1);
     
@@ -236,55 +205,6 @@ void SimpleMBCompAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer,
     
     leftChain.process(leftContext);
     rightChain.process(rightContext);
-    
-    auto cutCoefs =
-        juce::dsp::FilterDesign<float>::designIIRLowpassHighOrderButterworthMethod(chainSettings.lowCutFreq,
-                                                                               getSampleRate(),
-                                                                               2 * (chainSettings.lowCutSlope + 1));
-    auto& leftLowCut = leftChain.get<ChainPosition::LowPass>();
-    auto& rightLowCut = rightChain.get<ChainPosition::LowPass>();
-    
-    leftLowCut.setBypassed<0>(true);
-    leftLowCut.setBypassed<1>(true);
-    leftLowCut.setBypassed<2>(true);
-    leftLowCut.setBypassed<3>(true);
-    rightLowCut.setBypassed<0>(true);
-    rightLowCut.setBypassed<1>(true);
-    rightLowCut.setBypassed<2>(true);
-    rightLowCut.setBypassed<3>(true);
-
-    switch(chainSettings.lowCutSlope)
-    {
-        case Slope_48:
-        {
-            leftLowCut.get<3>().coefficients = *cutCoefs[3];
-            leftLowCut.setBypassed<3>(false);
-            rightLowCut.get<3>().coefficients = *cutCoefs[3];
-            rightLowCut.setBypassed<3>(false);
-        }
-        case Slope_36:
-        {
-            leftLowCut.get<2>().coefficients = *cutCoefs[2];
-            leftLowCut.setBypassed<2>(false);
-            rightLowCut.get<2>().coefficients = *cutCoefs[2];
-            rightLowCut.setBypassed<2>(false);
-        }
-        case Slope_24:
-        {
-            leftLowCut.get<1>().coefficients = *cutCoefs[1];
-            leftLowCut.setBypassed<1>(false);
-            rightLowCut.get<1>().coefficients = *cutCoefs[1];
-            rightLowCut.setBypassed<1>(false);
-        }
-        case Slope_12:
-        {
-            leftLowCut.get<0>().coefficients = *cutCoefs[0];
-            leftLowCut.setBypassed<0>(false);
-            rightLowCut.get<0>().coefficients = *cutCoefs[0];
-            rightLowCut.setBypassed<0>(false);
-            break;
-        }
-    }
 }
 
 //==============================================================================
@@ -338,13 +258,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout
             juce::ParameterID("LowCut Freq",1),
             "LowCut Frequency",
             juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.25f),
-            20.0f
+            200.0f
     ));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID("HighCut Freq",1),
             "HighCut Frequency",
             juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.25f),
-            20000.0f
+            18000.0f
     ));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID("Peak Freq",1),

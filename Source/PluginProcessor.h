@@ -81,6 +81,8 @@ public:
     
 private:
     
+    void updatePeakfilter(ChainSettings settings);
+    
     // aliases
     using Filter = juce::dsp::IIR::Filter<float>;
     
@@ -94,6 +96,42 @@ private:
         Peak,
         HighPass
     };
+    
+    template<typename ChainType, typename CoefficentType>
+    void updateLowCutFilter(ChainType& chain,
+                            const CoefficentType& coefficients,
+                            const Slope& lowCutSlope)
+    {
+        chain.template setBypassed<0>(true);
+        chain.template setBypassed<1>(true);
+        chain.template setBypassed<2>(true);
+        chain.template setBypassed<3>(true);
+
+        switch(lowCutSlope)
+        {
+            case Slope_48:
+            {
+                chain.template get<3>().coefficients = *coefficients[3];
+                chain.template setBypassed<3>(false);
+            }
+            case Slope_36:
+            {
+                chain.template get<2>().coefficients = *coefficients[2];
+                chain.template setBypassed<2>(false);
+            }
+            case Slope_24:
+            {
+                chain.template get<1>().coefficients = *coefficients[1];
+                chain.template setBypassed<1>(false);
+            }
+            case Slope_12:
+            {
+                chain.template get<0>().coefficients = *coefficients[0];
+                chain.template setBypassed<0>(false);
+                break;
+            }
+        }
+    }
     
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SimpleMBCompAudioProcessor)
